@@ -1,7 +1,7 @@
-// Public Firebase web configuration. Fill from Firebase Console; no credentials or portfolio data here.
+// Public Firebase web configuration; portfolio data is protected by Firestore rules.
 export const firebaseConfig = {
-  apiKey: "REPLACE_WITH_FIREBASE_WEB_API_KEY",
-  authDomain: "REPLACE_WITH_PROJECT_ID.firebaseapp.com",
-  projectId: "REPLACE_WITH_PROJECT_ID",
-  appId: "REPLACE_WITH_FIREBASE_APP_ID"
+  apiKey: "AIzaSyB7TDHvc6-1QJbWGEfR3b8geEnCQigNX_c",
+  authDomain: "financial-center-c4b3c.firebaseapp.com",
+  projectId: "financial-center-c4b3c",
+  appId: "1:399796979043:web:5498b27cc2e44124eabf56"
 };
