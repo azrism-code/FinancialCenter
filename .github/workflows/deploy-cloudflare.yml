@@ -1,0 +1,25 @@
+name: Deploy Cloudflare quote relay
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-cloudflare.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          wranglerVersion: '4.92.0'
