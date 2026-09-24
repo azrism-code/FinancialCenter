@@ -4,11 +4,11 @@
   const loadingHistory = new Set();
   const storage = name => `financial-center-tiingo-${name}-${uid}`;
   const token = () => localStorage.getItem(storage('token'));
-  const relay = () => localStorage.getItem(storage('relay'));
+  const relay = () => localStorage.getItem(storage('relay')) || 'https://financial-center-quotes.azrism.workers.dev/';
   const eligible = x => /^[A-Z][A-Z0-9-]{0,14}$/.test(x.symbol);
   const status = message => { quoteStatus = message; render(); };
   async function query(route, parameters) {
-    if (!token() || !relay()) throw Error('יש להגדיר טוקן Tiingo וכתובת מתווך');
+    if (!token()) throw Error('יש להגדיר טוקן Tiingo');
     const url = new URL(route, relay());
     Object.entries(parameters).forEach(([key, value]) => url.searchParams.set(key, value));
     const response = await fetch(url, { headers: { 'X-Tiingo-Token': token() }, cache: 'no-store' });
@@ -16,7 +16,7 @@
     return response.json();
   }
   async function refresh(force = false) {
-    if (!remoteReady || !uid || busy || !token() || !relay() || (!force && Date.now() - refreshed < 300000)) return;
+    if (!remoteReady || !uid || busy || !token() || (!force && Date.now() - refreshed < 300000)) return;
     const items = state.items.filter(eligible);
     if (!items.length) return;
     busy = true; const activeUid = uid;
@@ -46,7 +46,7 @@
   }
   async function history(symbol) {
     const item = state.items.find(x => x.symbol === symbol);
-    if (!item || !eligible(item) || !token() || !relay()) return;
+    if (!item || !eligible(item) || !token()) return;
     if (loadingHistory.has(symbol) || (item.historySource === 'Tiingo' && Date.now() - item.historyFetched < 86400000)) return;
     loadingHistory.add(symbol);
     const activeUid = uid;
