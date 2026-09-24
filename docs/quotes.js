@@ -1,50 +1,91 @@
-// Finnhub API keys stay on this device. Portfolio data stays in the user's Firestore document.
+// Each user keeps their Tiingo token on their own device.
 (() => {
-  const MAX_QUOTES=50, MIN_REFRESH_MS=5*60*1000;
-  let uid='',busy=false,refreshTime=0;
-  const keyName=()=>`financial-center-finnhub-${uid}`;
-  const status=message=>{quoteStatus=message;render()};
-  const eligible=item=>/^[A-Z][A-Z0-9-]{0,14}$/.test(item.symbol);
-  const prioritized=()=>[...state.items].filter(eligible).sort((a,b)=>Number(holding(b))-Number(holding(a))).slice(0,MAX_QUOTES);
-  async function refresh(force=false){
-    if(!remoteReady||busy||!uid)return;
-    const apiKey=localStorage.getItem(keyName());
-    if(!apiKey){status('להפעלת שערים יש להגדיר מפתח Finnhub');return}
-    if(!force&&Date.now()-refreshTime<MIN_REFRESH_MS)return;
-    const items=prioritized();if(!items.length){status('אין סימולים אמריקאיים לרענון');return}
-    busy=true;refreshTime=Date.now();const activeUid=uid;let updated=0,failed=0,limited=false;
-    status(`מעדכן שערים: 0/${items.length}`);
-    try{
-      for(const item of items){
-        if(!remoteReady||uid!==activeUid)break;
-        try{
-          const url=new URL('https://finnhub.io/api/v1/quote');
-          url.searchParams.set('symbol',item.symbol);
-          url.searchParams.set('token',apiKey);
-          const response=await fetch(url,{cache:'no-store'});
-          if(response.status===429){limited=true;break}
-          if(!response.ok)throw Error(`HTTP ${response.status}`);
-          const result=await response.json();
-          if(Number.isFinite(result.c)&&result.c>0&&Number.isFinite(result.t)&&result.t>0){
-            item.price=result.c;item.quoteTime=result.t*1000;item.quoteSource='Finnhub';updated++;
-          }else failed++;
-        }catch{failed++}
-        if((updated+failed)%10===0)status(`מעדכן שערים: ${updated+failed}/${items.length}`);
-      }
-      if(updated&&uid===activeUid)save();
-      if(uid===activeUid)status(`${updated} שערים עודכנו${failed?` · ${failed} לא זמינים`:''}${limited?' · הגעת למכסת השירות':''} · ${new Date().toLocaleTimeString('he-IL')}`);
-    }finally{busy=false}
+  let uid = '', busy = false, refreshed = 0;
+  const loadingHistory = new Set();
+  const storage = name => `financial-center-tiingo-${name}-${uid}`;
+  const token = () => localStorage.getItem(storage('token'));
+  const relay = () => localStorage.getItem(storage('relay'));
+  const eligible = x => /^[A-Z][A-Z0-9-]{0,14}$/.test(x.symbol);
+  const status = message => { quoteStatus = message; render(); };
+  async function query(route, parameters) {
+    if (!token() || !relay()) throw Error('יש להגדיר טוקן Tiingo וכתובת מתווך');
+    const url = new URL(route, relay());
+    Object.entries(parameters).forEach(([key, value]) => url.searchParams.set(key, value));
+    const response = await fetch(url, { headers: { 'X-Tiingo-Token': token() }, cache: 'no-store' });
+    if (!response.ok) throw Error(response.status === 429 ? 'מכסת Tiingo הושגה' : `שגיאת שערים ${response.status}`);
+    return response.json();
   }
-  window.marketQuotes={
-    onPortfolioLoaded(newUid){uid=newUid;refreshTime=0;refresh()},
-    onSignOut(){uid='';busy=false;refreshTime=0;quoteStatus=''},
-    openSettings(){
-      if(!uid)return;
-      const configured=!!localStorage.getItem(keyName());
-      document.getElementById('modal').innerHTML=`<div class="dialog"><div role="dialog" aria-modal="true" aria-label="הגדרת שערים"><h2>שערי מניות · Finnhub</h2><p class="note">מתעדכנות עד ${MAX_QUOTES} מניות אמריקאיות, אחזקות תחילה. סימולים מבורסות אחרות ומדדים נשארים עם המחיר השמור. המפתח נשמר במכשיר הזה בלבד ואינו נשלח ל־Firebase.</p><form id="quotekeyform"><label for="quotekey">מפתח API אישי של Finnhub</label><input id="quotekey" type="password" autocomplete="off" placeholder="${configured?'מפתח שמור · הזן חדש להחלפה':'הדבק מפתח'}"><p class="note"><a href="https://finnhub.io/register" target="_blank" rel="noopener noreferrer">פתיחת חשבון Finnhub חינמי</a>. קריאות שער שולחות את הסימולים ומפתח ה־API ל־Finnhub. רענון חוזר מוגבל לחמש דקות.</p><div class="actions"><button type="button" class="btn" id="closequotes">סגור</button>${configured?'<button type="button" class="btn" id="clearquotes">מחק מפתח</button>':''}<button class="btn primary">שמור ורענן</button></div></form></div></div>`;
-      document.getElementById('closequotes').onclick=close;
-      document.getElementById('clearquotes')?.addEventListener('click',()=>{localStorage.removeItem(keyName());close();status('מפתח Finnhub נמחק מהמכשיר')});
-      document.getElementById('quotekeyform').onsubmit=e=>{e.preventDefault();const key=document.getElementById('quotekey').value.trim();if(key){if(!/^[A-Za-z0-9_-]{10,100}$/.test(key)){alert('מפתח Finnhub אינו תקין');return}localStorage.setItem(keyName(),key)}if(!localStorage.getItem(keyName())){alert('יש להזין מפתח');return}close();refreshTime=0;refresh(true)};
+  async function refresh(force = false) {
+    if (!remoteReady || !uid || busy || !token() || !relay() || (!force && Date.now() - refreshed < 300000)) return;
+    const items = state.items.filter(eligible);
+    if (!items.length) return;
+    busy = true; const activeUid = uid;
+    status(`מעדכן ${items.length} שערים...`);
+    try {
+      const quotes = await query('quotes', { symbols: items.map(x => x.symbol).join(',') });
+      if (!remoteReady || uid !== activeUid) return;
+      const bySymbol = new Map(items.map(x => [x.symbol, x]));
+      let updated = 0;
+      for (const q of quotes) {
+        const item = bySymbol.get(q.ticker);
+        if (!item || !Number.isFinite(q.tngoLast) || q.tngoLast <= 0) continue;
+        item.price = q.tngoLast;
+        item.quoteTime = Date.parse(q.timestamp) || Date.now();
+        item.quoteSource = 'Tiingo';
+        if (Number.isFinite(q.prevClose) && q.prevClose > 0) {
+          item.prevClose = q.prevClose;
+          item.dayChange = (q.tngoLast / q.prevClose - 1) * 100;
+        }
+        updated++;
+      }
+      refreshed = Date.now();
+      if (updated) save();
+      status(`${updated}/${items.length} שערים עודכנו · ${new Date().toLocaleTimeString('he-IL')}`);
+    } catch (error) { status(error.message); }
+    finally { busy = false; }
+  }
+  async function history(symbol) {
+    const item = state.items.find(x => x.symbol === symbol);
+    if (!item || !eligible(item) || !token() || !relay()) return;
+    if (loadingHistory.has(symbol) || (item.historySource === 'Tiingo' && Date.now() - item.historyFetched < 86400000)) return;
+    loadingHistory.add(symbol);
+    const activeUid = uid;
+    status(`טוען גרף ${symbol}...`);
+    try {
+      const from = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);
+      const points = await query('history', { symbol, startDate: from });
+      if (!remoteReady || uid !== activeUid || !state.items.includes(item)) return;
+      const valid = points.filter(p => Number.isFinite(p.close) && p.close > 0 && p.date);
+      if (valid.length < 2) throw Error('אין מספיק נתונים לגרף');
+      item.history = valid.map(p => p.close);
+      item.historyDates = valid.map(p => p.date);
+      item.historySource = 'Tiingo';
+      item.historyFetched = Date.now();
+      save(); status(`גרף ${symbol} עודכן`);
+    } catch (error) { status(error.message); }
+    finally { loadingHistory.delete(symbol); }
+  }
+  window.marketQuotes = {
+    onPortfolioLoaded(newUid) { uid = newUid; refreshed = 0; refresh(); },
+    onSignOut() { uid = ''; busy = false; refreshed = 0; quoteStatus = ''; },
+    onResearch(symbol) { history(symbol); },
+    openSettings() {
+      if (!uid) return;
+      const configured = !!token();
+      document.getElementById('modal').innerHTML = `<div class="dialog"><div role="dialog" aria-modal="true" aria-label="הגדרת שערים"><h2>שערים וגרפים · Tiingo</h2><p class="note">שערים בבקשה אחת; גרף היסטורי נטען בעת פתיחת מניה. יש להגדיר מתווך כדי שהדפדפן יוכל לקרוא מ־Tiingo.</p><form id="quotekeyform"><label>כתובת המתווך</label><input id="relay" type="url" required placeholder="https://example.workers.dev/" value="${esc(relay() || '')}"><label>טוקן Tiingo</label><input id="quotekey" type="password" autocomplete="off" placeholder="${configured ? 'טוקן שמור · הזן חדש להחלפה' : 'הדבק טוקן'}"><p class="note">הטוקן נשמר במכשיר הזה, ונשלח למתווך ול־Tiingo. הוא אינו נשמר ב־Firebase. <a href="https://api.tiingo.com/account/api/token" target="_blank" rel="noopener noreferrer">עמוד הטוקן</a></p><div class="actions"><button type="button" class="btn" id="closequotes">סגור</button>${configured ? '<button type="button" class="btn" id="clearquotes">מחק הגדרות</button>' : ''}<button class="btn primary">שמור ורענן</button></div></form></div>`;
+      document.getElementById('closequotes').onclick = close;
+      document.getElementById('clearquotes')?.addEventListener('click', () => { localStorage.removeItem(storage('token')); localStorage.removeItem(storage('relay')); close(); status('הגדרות Tiingo נמחקו'); });
+      document.getElementById('quotekeyform').onsubmit = event => {
+        event.preventDefault();
+        const address = new URL(document.getElementById('relay').value);
+        const key = document.getElementById('quotekey').value.trim();
+        if (address.protocol !== 'https:') { alert('יש להזין כתובת HTTPS'); return; }
+        if (key && !/^[A-Za-z0-9_-]{20,100}$/.test(key)) { alert('טוקן לא תקין'); return; }
+        if (key) localStorage.setItem(storage('token'), key);
+        if (!token()) { alert('יש להזין טוקן'); return; }
+        localStorage.setItem(storage('relay'), address.origin + '/');
+        close(); refreshed = 0; refresh(true);
+      };
     }
   };
 })();
