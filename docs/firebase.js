@@ -10,7 +10,7 @@ if(firebaseConfig.projectId.startsWith('REPLACE_')){
  const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
  let user=null,saveQueue=Promise.resolve();
  const ref=()=>doc(db,'portfolios',user.uid);
- window.portfolioStore={save(portfolio){if(!user)return Promise.reject(Error('Sign in required'));const snapshot=JSON.parse(JSON.stringify(portfolio));saveQueue=saveQueue.catch(()=>{}).then(()=>setDoc(ref(),{...snapshot,updatedAt:Date.now()}));return saveQueue}};
+ window.portfolioStore={save(portfolio){if(!user)return Promise.reject(Error('Sign in required'));const snapshot=JSON.parse(JSON.stringify(portfolio));for(const section of snapshot.portfolios||[])for(const item of section.items||[])if(item.historySource==='Tiingo'){delete item.history;delete item.historyDates;delete item.historyFetched;delete item.historySource}saveQueue=saveQueue.catch(()=>{}).then(()=>setDoc(ref(),{...snapshot,updatedAt:Date.now()}));return saveQueue}};
  document.getElementById('signin').onclick=()=>signInWithPopup(auth,new GoogleAuthProvider()).catch(e=>{sync.textContent='הכניסה נכשלה: '+e.code});
  document.getElementById('signout').onclick=()=>signOut(auth);
  onAuthStateChanged(auth,async current=>{user=null;window.unloadPortfolio();if(!current)return;sync.textContent='טוען תיק...';try{const snapshot=await getDoc(doc(db,'portfolios',current.uid));user=current;window.loadPortfolio(current,snapshot.exists()?snapshot.data():{items:[],alerts:[]})}catch(e){sync.textContent='הטעינה נכשלה: '+e.code}});
