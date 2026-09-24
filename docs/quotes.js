@@ -32,6 +32,10 @@
         item.price = q.tngoLast;
         item.quoteTime = Date.parse(q.timestamp) || Date.now();
         item.quoteSource = 'Tiingo';
+        if (Number.isFinite(q.prevClose) && q.prevClose > 0) {
+          item.prevClose = q.prevClose;
+          item.dayChange = (q.tngoLast / q.prevClose - 1) * 100;
+        }
         updated++;
       }
       refreshed = Date.now();
