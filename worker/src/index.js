@@ -32,6 +32,22 @@ async function yahooChart(symbol, kind = 'quote') {
   if (!result?.meta || body.chart.error) throw new MarketError('unsupported_symbol', 404);
   return result;
 }
+async function lookup(url) {
+  const symbol=(url.searchParams.get('symbol')||'').trim().toUpperCase();
+  if(symbol) {
+    if(!SYMBOL.test(symbol))throw new MarketError('invalid_symbols',400);
+    const chart=await yahooChart(symbol);
+    const meta=chart.meta;
+    if(!positive(meta.regularMarketPrice)||meta.symbol?.toUpperCase()!==symbol)throw new MarketError('unsupported_symbol',404);
+    return {symbol,name:meta.longName||meta.shortName||symbol,exchange:meta.fullExchangeName||meta.exchangeName||'',currency:meta.currency||null};
+  }
+  const q=(url.searchParams.get('q')||'').trim();
+  if(q.length<2||q.length>60||/[\x00-\x1f]/.test(q))throw new MarketError('invalid_query',400);
+  const params=new URLSearchParams({q,quotesCount:'10',newsCount:'0',listsCount:'0'});
+  const data=await jsonFetch(`https://query1.finance.yahoo.com/v1/finance/search?${params}`,null,60);
+  if(!Array.isArray(data.quotes))throw new MarketError('invalid_response');
+  return {results:data.quotes.filter(x=>SYMBOL.test(x.symbol||'')&&['EQUITY','ETF','MUTUALFUND','INDEX'].includes(x.quoteType)).slice(0,8).map(x=>({symbol:x.symbol,name:x.longname||x.shortname||x.symbol,exchange:x.exchDisp||x.exchange||'',type:x.quoteType}))};
+}
 export function yahooBars(chart) {
   const q = chart.indicators?.quote?.[0] || {}, adj = chart.indicators?.adjclose?.[0]?.adjclose || [];
   return (chart.timestamp || []).map((time,i) => ({ time, date:dayAt(time,chart.meta.exchangeTimezoneName || 'America/New_York'), close:finite(q.close?.[i]), open:finite(q.open?.[i]), high:finite(q.high?.[i]), low:finite(q.low?.[i]), volume:finite(q.volume?.[i]), adjClose:finite(adj[i]) })).filter(p=>positive(p.close)).sort((a,b)=>a.time-b.time);
@@ -127,7 +143,8 @@ export default { async fetch(request) {
   const url=new URL(request.url);
   try {
     if(['/quotes','/history'].includes(url.pathname))return await legacy(url,request);
-    if(url.pathname==='/health')return reply({version:'1.7.0',providers:['yahoo','tiingo']});
+    if(url.pathname==='/health')return reply({version:'1.7.2',providers:['yahoo','tiingo']});
+    if(url.pathname==='/lookup')return reply(await lookup(url));
     const provider=url.searchParams.get('provider')||'yahoo';
     if(!['yahoo','tiingo'].includes(provider))throw new MarketError('invalid_provider',400);
     const token=provider==='tiingo'?tokenFrom(request):null;
