@@ -30,12 +30,12 @@
         const item = bySymbol.get(q.ticker);
         if (!item || !Number.isFinite(q.tngoLast) || q.tngoLast <= 0) continue;
         item.price = q.tngoLast;
-        item.quoteTime = Date.parse(q.timestamp) || Date.now();
+        item.quoteTime = Date.parse(q.timestamp) || 0;
         item.quoteSource = 'Tiingo';
-        if (Number.isFinite(q.prevClose) && q.prevClose > 0) {
+        if (Number.isFinite(q.prevClose) && q.prevClose > 0 && item.quoteTime && Date.now()-item.quoteTime < 4*86400000) {
           item.prevClose = q.prevClose;
           item.dayChange = (q.tngoLast / q.prevClose - 1) * 100;
-        }
+        } else { item.prevClose = 0; item.dayChange = null; }
         updated++;
       }
       refreshed = Date.now();
@@ -47,12 +47,12 @@
   async function history(symbol) {
     const item = state.items.find(x => x.symbol === symbol);
     if (!item || !eligible(item) || !token()) return;
-    if (loadingHistory.has(symbol) || (item.historySource === 'Tiingo' && Date.now() - item.historyFetched < 86400000)) return;
+    if (loadingHistory.has(symbol) || (item.historySource === 'Tiingo' && Date.now() - item.historyFetched < 86400000 && String(item.historyDates?.[0]||'').slice(0,10) <= new Date(Date.now()-360*86400000).toISOString().slice(0,10))) return;
     loadingHistory.add(symbol);
     const activeUid = uid;
     status(`טוען גרף ${symbol}...`);
     try {
-      const from = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);
+      const from = new Date(Date.now() - 380 * 86400000).toISOString().slice(0, 10);
       const points = await query('history', { symbol, startDate: from });
       if (!remoteReady || uid !== activeUid || !state.items.includes(item)) return;
       const valid = points.filter(p => Number.isFinite(p.close) && p.close > 0 && p.date);
@@ -66,7 +66,9 @@
     finally { loadingHistory.delete(symbol); }
   }
   window.marketQuotes = {
-    onPortfolioLoaded(newUid) { uid = newUid; refreshed = 0; refresh(); },
+    onPortfolioLoaded(newUid) { uid = newUid; refreshed = 0; refresh(); this.primeHistory(); },
+    async primeHistory() { if (!token()) return; const active=state; for (const x of [...active.items].filter(x=>Number(x.qty)>0)) { if (state!==active||!remoteReady) break; await history(x.symbol); } },
+    refreshNow() { refreshed=0; refresh(true); },
     onSignOut() { uid = ''; busy = false; refreshed = 0; quoteStatus = ''; },
     onResearch(symbol) { history(symbol); },
     openSettings() {
