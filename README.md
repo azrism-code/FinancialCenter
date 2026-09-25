@@ -1,11 +1,17 @@
-# Financial Center
+# Financial Center — PWA v1.7.0
 
-Private portfolio research application. The deployed Work Site uses its own private D1 database. This repository contains source code only; personal holdings and Site identity are intentionally excluded.
+Live app: https://azrism-code.github.io/FinancialCenter/
 
-## Local setup
+The deployed app is in `docs/` (GitHub Pages), with Firebase Google authentication and Firestore portfolios per user. `worker/` is the Cloudflare market-data relay, deployed by GitHub Actions. The older framework prototype outside `docs/` is not the deployed PWA.
 
-Requires Node.js 22.13+. Run `npm install`, `npm run db:generate` when the schema changes, and `npm run dev`. The bundled Sites workflow deploys the application; a separate Firebase migration has not been performed.
+- Independent portfolios, CSV imports, stock details and mobile installation.
+- Account provider preference: automatic (Yahoo first), Yahoo, or Tiingo.
+- Connection comparison in Settings; Tiingo keys remain device-local.
+- Daily change uses the previous session from the same provider; extended-hours prices appear separately.
+- Intraday stock/portfolio charts with time and price ticks. Charts load for visible stocks and holdings.
+- Reimport preserves provider prices. Failed updates retain the last value with its source/date and an error.
+- Yahoo index and exchange-suffixed symbols are accepted. Different holding currencies are not silently summed.
 
-The initial seed in `db/seed.json` is empty. Every authenticated user has an independent portfolio keyed by the site's authenticated user ID. Do not commit portfolio exports, credentials, or API keys.
+Serve `docs/` locally with `python -m http.server 8765 --directory docs`. Market requests require the deployed origin, so use the mocked UI test locally. Run core checks with `node --test tests/market-data.test.mjs tests/persistence.test.cjs`.
 
-Market prices and background alerts are not connected yet.
+See `worker/README.md` for API behavior, deployment and UI checks. Do not commit portfolio exports or API keys. Background alerts and push notifications are not implemented.

@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { normalizeYahoo } from '../worker/src/index.js';
+const chart=()=>({meta:{regularMarketPrice:92.07,regularMarketTime:Date.parse('2026-09-24T20:03:00Z')/1000,currency:'USD',exchangeTimezoneName:'America/New_York',chartPreviousClose:100.17,currentTradingPeriod:{regular:{start:Date.parse('2026-09-25T13:30:00Z')/1000,end:Date.parse('2026-09-25T20:00:00Z')/1000}}},timestamp:['2026-09-22T13:30Z','2026-09-23T13:30Z','2026-09-24T13:30Z'].map(x=>Date.parse(x)/1000),indicators:{quote:[{close:[95.87,95.82,92.05]}]}});
+test('closed session uses official daily close, not extended price or range baseline',()=>{let q=normalizeYahoo('UPS',chart(),Date.parse('2026-09-25T08:00Z'));assert.equal(q.price,92.05);assert.equal(q.prevClose,95.82);assert.equal(q.sessionDate,'2026-09-24');assert.equal(q.quoteKind,'close');assert.equal(q.changePercent.toFixed(2),'-3.93');});
+test('missing previous-session bar does not become a multi-day daily change',()=>{let c=chart();c.indicators.quote[0].close[1]=null;assert.equal(normalizeYahoo('UPS',c).prevClose,null);});
+test('during regular market quote uses live price instead of unfinished daily candle',()=>{let c=chart();c.meta.regularMarketTime=Date.parse('2026-09-25T14:00Z')/1000;c.timestamp.push(Date.parse('2026-09-25T13:30Z')/1000);c.indicators.quote[0].close.push(91);let q=normalizeYahoo('UPS',c,Date.parse('2026-09-25T14:01Z'));assert.equal(q.price,92.07);assert.equal(q.prevClose,92.05);assert.equal(q.quoteKind,'regular');});

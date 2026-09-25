@@ -26,7 +26,7 @@ async function jsonFetch(url, token, cacheSeconds = 0) {
   return data;
 }
 async function yahooChart(symbol, kind = 'quote') {
-  const params = kind === 'daily' ? 'range=2y&interval=1d' : kind === 'intraday' ? 'range=5d&interval=5m&includePrePost=false' : 'range=5d&interval=1d';
+  const params = kind === 'daily' ? 'range=2y&interval=1d' : kind === 'intraday' ? 'range=5d&interval=5m&includePrePost=true' : 'range=5d&interval=1d';
   const body = await jsonFetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`, null, kind === 'daily' ? 900 : 60);
   const result = body?.chart?.result?.[0];
   if (!result?.meta || body.chart.error) throw new MarketError('unsupported_symbol', 404);
@@ -81,14 +81,31 @@ async function tiingoQuotes(symbols,token) {
 }
 async function series(symbol,provider,kind,token) {
   if (provider==='tiingo') {
-    if (kind==='intraday') throw new MarketError('intraday_unavailable',404);
+    if (kind==='intraday') {
+      if (!US_SYMBOL.test(symbol)) throw new MarketError('unsupported_symbol',404);
+      const start=new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+      const data=await jsonFetch(`https://api.tiingo.com/tiingo/equity/intraday/${encodeURIComponent(symbol)}/prices?startDate=${start}&resampleFreq=5min&afterHours=false`,token);
+      if(!Array.isArray(data))throw new MarketError('invalid_response');
+      const all=data.filter(p=>positive(p.close)&&Number.isFinite(Date.parse(p.date))).map(p=>({...p,time:Date.parse(p.date)/1000,date:dayAt(Date.parse(p.date)/1000)})).sort((a,b)=>a.time-b.time);
+      const sessionDate=all.at(-1)?.date;
+      return {source:'Tiingo',kind,timezone:'America/New_York',currency:'USD',sessionDate,points:all.filter(p=>p.date===sessionDate)};
+    }
     return {source:'Tiingo',kind,timezone:'America/New_York',currency:'USD',points:await tiingoDaily(symbol,token)};
   }
   const chart=await yahooChart(symbol,kind), all=yahooBars(chart), zone=chart.meta.exchangeTimezoneName || 'America/New_York';
   // Pick the session of the regular quote. Before the next opening, show the last completed session.
   const sessionDate=dayAt(chart.meta.regularMarketTime,zone);
-  const points=kind==='intraday'?all.filter(p=>p.date===sessionDate):all;
-  return {source:'Yahoo',kind,timezone:zone,currency:chart.meta.currency,sessionDate,points};
+  let points=all,extended=null;
+  if(kind==='intraday') {
+    const regular=chart.meta.currentTradingPeriod?.regular;
+    const hm=t=>new Intl.DateTimeFormat('en-GB',{timeZone:zone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(t*1000));
+    const start=regular?hm(regular.start):'09:30',end=regular?hm(regular.end):'16:00';
+    const inside=p=>hm(p.time)>=start&&hm(p.time)<=end;
+    points=all.filter(p=>p.date===sessionDate&&inside(p));
+    const last=all.at(-1);
+    if(last&&last.time>chart.meta.regularMarketTime&&!inside(last))extended={price:last.close,time:last.time*1000,source:'Yahoo',kind:hm(last.time)<start?'pre':'post'};
+  }
+  return {source:'Yahoo',kind,timezone:zone,currency:chart.meta.currency,sessionDate,points,extended};
 }
 async function legacy(url,request) {
   const token=tokenFrom(request); let upstream;
