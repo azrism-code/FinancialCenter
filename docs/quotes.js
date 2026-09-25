@@ -103,7 +103,7 @@
     if(output.isConnected)output.textContent=rows.join('\n');
   }
   window.marketQuotes={
-    onPortfolioLoaded(newUid){reset();uid=newUid;refresh();},onSignOut(){reset();uid='';quoteStatus='';},refreshNow(){return refresh(true);},primeHistory,
+    onPortfolioLoaded(newUid){reset();uid=newUid;refresh();},onSignOut(){reset();uid='';quoteStatus='';},refreshNow(){return refresh(true);},lookup(parameters){return query('lookup',parameters,'yahoo');},primeHistory,
     onResearch(symbol){history(symbol,'daily');history(symbol,'intraday');},onVisible(symbol){history(symbol,'intraday');},clearQuote,
     openSettings(){
       if(!uid)return;const configured=!!token();
