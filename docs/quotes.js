@@ -44,13 +44,13 @@
     } catch (error) { status(error.message); }
     finally { busy = false; }
   }
-  async function history(symbol) {
+  async function history(symbol, quiet = false) {
     const item = state.items.find(x => x.symbol === symbol);
     if (!item || !eligible(item) || !token()) return;
     if (loadingHistory.has(symbol) || (item.historySource === 'Tiingo' && Date.now() - item.historyFetched < 86400000 && String(item.historyDates?.[0]||'').slice(0,10) <= new Date(Date.now()-360*86400000).toISOString().slice(0,10))) return;
     loadingHistory.add(symbol);
     const activeUid = uid;
-    status(`טוען גרף ${symbol}...`);
+    if (!quiet) status(`טוען גרף ${symbol}...`);
     try {
       const from = new Date(Date.now() - 380 * 86400000).toISOString().slice(0, 10);
       const points = await query('history', { symbol, startDate: from });
@@ -61,13 +61,13 @@
       item.historyDates = valid.map(p => p.date);
       item.historySource = 'Tiingo';
       item.historyFetched = Date.now();
-      save(); status(`גרף ${symbol} עודכן`);
-    } catch (error) { status(error.message); }
+      save(); if (!quiet) status(`גרף ${symbol} עודכן`);
+    } catch (error) { if (!quiet) status(error.message); }
     finally { loadingHistory.delete(symbol); }
   }
   window.marketQuotes = {
     onPortfolioLoaded(newUid) { uid = newUid; refreshed = 0; refresh(); this.primeHistory(); },
-    async primeHistory() { if (!token()) return; const active=state; for (const x of [...active.items].filter(x=>Number(x.qty)>0)) { if (state!==active||!remoteReady) break; await history(x.symbol); } },
+    async primeHistory() { if (!token()) return; const active=state; for (const x of [...active.items].filter(x=>Number(x.qty)>0)) { if (state!==active||!remoteReady) break; await history(x.symbol, true); } if (state===active) render(); },
     refreshNow() { refreshed=0; refresh(true); },
     onSignOut() { uid = ''; busy = false; refreshed = 0; quoteStatus = ''; },
     onResearch(symbol) { history(symbol); },
