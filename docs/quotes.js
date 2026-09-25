@@ -32,6 +32,7 @@
         item.price = q.tngoLast;
         item.quoteTime = Date.parse(q.timestamp) || 0;
         item.quoteSource = 'Tiingo';
+        for (const field of ['open','high','low','volume']) item['market'+field[0].toUpperCase()+field.slice(1)] = Number.isFinite(q[field]) && q[field]>=0 ? q[field] : null;
         if (Number.isFinite(q.prevClose) && q.prevClose > 0 && item.quoteTime && Date.now()-item.quoteTime < 4*86400000) {
           item.prevClose = q.prevClose;
           item.dayChange = (q.tngoLast / q.prevClose - 1) * 100;
@@ -58,6 +59,9 @@
       const valid = points.filter(p => Number.isFinite(p.close) && p.close > 0 && p.date);
       if (valid.length < 2) throw Error('אין מספיק נתונים לגרף');
       item.history = valid.map(p => p.close);
+      item.historyHigh = valid.map(p => Number.isFinite(p.high) ? p.high : null);
+      item.historyLow = valid.map(p => Number.isFinite(p.low) ? p.low : null);
+      item.historyVolume = valid.map(p => Number.isFinite(p.volume) ? p.volume : null);
       item.historyDates = valid.map(p => p.date);
       item.historySource = 'Tiingo';
       item.historyFetched = Date.now();
