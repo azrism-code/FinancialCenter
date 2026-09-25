@@ -16,7 +16,8 @@
     return response.json();
   }
   async function refresh(force = false) {
-    if (!remoteReady || !uid || busy || !token() || (!force && Date.now() - refreshed < 300000)) return;
+    if (!remoteReady || !uid || busy || (!force && Date.now() - refreshed < 300000)) return;
+    if (!token()) { status('השערים שמורים מהייבוא או מעדכון קודם. כדי לרענן בטלפון הזה, יש להגדיר בו טוקן Tiingo.'); return; }
     const items = state.items.filter(eligible);
     if (!items.length) return;
     busy = true; const activeUid = uid;
@@ -25,12 +26,14 @@
       const quotes = await query('quotes', { symbols: items.map(x => x.symbol).join(',') });
       if (!remoteReady || uid !== activeUid) return;
       const bySymbol = new Map(items.map(x => [x.symbol, x]));
-      let updated = 0;
+      let updated = 0, stale = 0;
       for (const q of quotes) {
         const item = bySymbol.get(q.ticker);
         if (!item || !Number.isFinite(q.tngoLast) || q.tngoLast <= 0) continue;
+        const receivedAt = Date.parse(q.timestamp) || 0;
+        if (!receivedAt || Date.now()-receivedAt > 4*86400000 || (item.quoteTime && receivedAt < Number(item.quoteTime))) { stale++; continue; }
         item.price = q.tngoLast;
-        item.quoteTime = Date.parse(q.timestamp) || 0;
+        item.quoteTime = receivedAt;
         item.quoteSource = 'Tiingo';
         for (const field of ['open','high','low','volume']) item['market'+field[0].toUpperCase()+field.slice(1)] = Number.isFinite(q[field]) && q[field]>=0 ? q[field] : null;
         if (Number.isFinite(q.prevClose) && q.prevClose > 0 && item.quoteTime && Date.now()-item.quoteTime < 4*86400000) {
@@ -41,7 +44,7 @@
       }
       refreshed = Date.now();
       if (updated) save();
-      status(`${updated}/${items.length} שערים עודכנו · ${new Date().toLocaleTimeString('he-IL')}`);
+      status(updated ? `${updated}/${items.length} שערים עודכנו מ־Tiingo · ${new Date().toLocaleTimeString('he-IL')}${stale?' · '+stale+' שערים ישנים נדחו':''}` : 'לא התקבלו שערים עדכניים מ־Tiingo; מוצגים שערים שמורים בלבד.');
     } catch (error) { status(error.message); }
     finally { busy = false; }
   }
