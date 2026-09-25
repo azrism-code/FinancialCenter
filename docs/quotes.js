@@ -77,15 +77,15 @@
     const key=[g,symbol,kind,source].join(':'),field=kind==='daily'?'history':'intraday';
     if(pending.has(key)||Date.now()-(failures.get(key)||0)<300000)return;
     const sameProvider=pref==='auto'||item[field+'Source']===labels[pref];
-    const ttl=kind==='daily'?6*3600000:300000;
-    if(sameProvider&&item[field+'Fetched']&&Date.now()-item[field+'Fetched']<ttl&&(kind!=='intraday'||item.intradaySessionDate===item.quoteSessionDate))return;
+    const ttl=kind==='daily'&&item.quoteKind==='close'?6*3600000:300000;
+    if(sameProvider&&item[field+'Fetched']&&Date.now()-item[field+'Fetched']<ttl&&(kind==='daily'?item.historyRequestedSessionDate:item.intradaySessionDate)===item.quoteSessionDate&&(kind!=='daily'||item.historyQuoteKind===item.quoteKind))return;
     pending.add(key);
     try {
       const result=await limited(async()=>{if(!current(g,portfolio))return null;return query('series',{symbol,kind},source);});
       if(!result||!current(g,portfolio)||!portfolio.items.includes(item))return;
       const points=(result.points||[]).filter(p=>validPrice(p.close));if(points.length<2)throw Error('אין מספיק נקודות לגרף');
       if(kind==='daily') {
-        item.history=points.map(p=>p.close);item.historyDates=points.map(p=>p.date);item.historyHigh=points.map(p=>p.high);item.historyLow=points.map(p=>p.low);item.historyVolume=points.map(p=>p.volume);
+        item.history=points.map(p=>p.close);item.historyDates=points.map(p=>p.date);item.historyHigh=points.map(p=>p.high);item.historyLow=points.map(p=>p.low);item.historyVolume=points.map(p=>p.volume);item.historySessionDate=points.at(-1).date;item.historyQuoteKind=item.quoteKind;item.historyRequestedSessionDate=item.quoteSessionDate;
       } else {
         item.intraday=points.map(p=>({value:p.close,time:p.time,date:new Date(p.time*1000).toLocaleTimeString('he-IL',{timeZone:result.timezone||'America/New_York',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}));item.intradaySessionDate=result.sessionDate;item.extended=result.extended||null;
       }
